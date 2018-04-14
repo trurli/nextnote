@@ -40,14 +40,14 @@ class NotebookApiController extends ApiController {
 
 	private $config;
 	private $notebookService;
-	private $userManager;
+	private $currentUserId;
 
 	public function __construct($appName, IRequest $request,
-								ILogger $logger, IConfig $config, NotebookService $notebookService, IUserManager $userManager) {
+								ILogger $logger, IConfig $config, NotebookService $notebookService, $UserId) {
 		parent::__construct($appName, $request);
 		$this->config = $config;
 		$this->notebookService = $notebookService;
-		$this->userManager = $userManager;
+		$this->currentUserId = $UserId;
 	}
 
 	/**
@@ -58,8 +58,7 @@ class NotebookApiController extends ApiController {
 	 * @return JSONResponse
 	 */
 	public function index($deleted = false) {
-		$uid = \OC::$server->getUserSession()->getUser()->getUID();
-		$result = $this->notebookService->findNotebooksFromUser($uid, $deleted);
+		$result = $this->notebookService->findNotebooksFromUser($this->currentUserId, $deleted);
 		$results = $result;
 		if($result instanceof Notebook){
 			$results = [];
@@ -80,7 +79,7 @@ class NotebookApiController extends ApiController {
 	 * @return NotFoundJSONResponse|JSONResponse
 	 */
 	public function get($id) {
-		$result = $this->notebookService->find($id);
+		$result = $this->notebookService->find($id, $this->currentUserId);
 		if (!$result) {
 			return new NotFoundJSONResponse();
 		}
@@ -104,11 +103,10 @@ class NotebookApiController extends ApiController {
 		}
 
 
-		$uid = \OC::$server->getUserSession()->getUser()->getUID();
 		$notebook = new Notebook();
 		$notebook->setName($name);
 		$notebook->setParentId($parent_id);
-		$notebook->setUid($uid);
+		$notebook->setUid($this->currentUserId);
 		$notebook->setColor($color);
 		$notebook->setGuid(Utils::GUID());
 
@@ -117,7 +115,7 @@ class NotebookApiController extends ApiController {
 			return new JSONResponse(['error' => 'Group already exists']);
 		}*/
 
-		$result = $this->notebookService->create($notebook, $uid)->jsonSerialize();
+		$result = $this->notebookService->create($notebook, $this->currentUserId)->jsonSerialize();
 		\OC_Hook::emit('OCA\NextNote', 'post_create_notebook', ['notebook' => $notebook]);
 		return new JSONResponse($result);
 	}
@@ -137,7 +135,7 @@ class NotebookApiController extends ApiController {
 		}
 
 		//@TODO for sharing add access check
-		$notebook = $this->notebookService->find($id);
+		$notebook = $this->notebookService->find($id, $this->currentUserId);
 		if (!$notebook) {
 			return new NotFoundJSONResponse();
 		}
@@ -158,12 +156,12 @@ class NotebookApiController extends ApiController {
 	 * @return NotFoundJSONResponse|UnauthorizedJSONResponse|JSONResponse
 	 */
 	public function delete($id) {
-		$entity = $this->notebookService->find($id);
+		$entity = $this->notebookService->find($id, $this->currentUserId);
 		if (!$entity) {
 			return new NotFoundJSONResponse();
 		}
 
-		$this->notebookService->delete($id);
+		$this->notebookService->delete($id, $this->currentUserId);
 		$result = (object)['success' => true];
 		\OC_Hook::emit('OCA\NextNote', 'post_delete_notebook', ['notebook_id' => $id]);
 		return new JSONResponse($result);

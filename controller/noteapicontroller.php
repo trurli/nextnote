@@ -35,7 +35,6 @@ use OCP\Constants;
 use OCP\IConfig;
 use OCP\ILogger;
 use \OCP\IRequest;
-use OCP\IUserManager;
 
 
 
@@ -43,16 +42,17 @@ class NoteApiController extends ApiController {
 
 	private $config;
 	private $noteService;
-	private $userManager;
 	private $notebookService;
+	private $currentUserId;
 
 	public function __construct($appName, IRequest $request,
-								ILogger $logger, IConfig $config, NoteService $noteService, NotebookService $groupService,IUserManager $userManager) {
+								ILogger $logger, IConfig $config, NoteService $noteService,
+                                NotebookService $groupService, $UserId) {
 		parent::__construct($appName, $request);
 		$this->config = $config;
 		$this->noteService = $noteService;
 		$this->notebookService = $groupService;
-		$this->userManager = $userManager;
+		$this->currentUserId = $UserId;
 	}
 
 	/**
@@ -64,15 +64,14 @@ class NoteApiController extends ApiController {
 	 * @return JSONResponse
 	 */
 	public function index($deleted = false, $notebook_id = false) {
-		$uid = \OC::$server->getUserSession()->getUser()->getUID();
 
 		if(!empty($notebook_id)){
 			$notebook_id = $this->notebookService->find($notebook_id)->getId();
 		}
-		$result = $this->noteService->findNotesFromUser($uid, $deleted, $notebook_id);
+		$result = $this->noteService->findNotesFromUser($this->currentUserId, $deleted, $notebook_id);
 		foreach ($result as &$note) {
 			if (is_array($note)) {
-				$note = $this->noteService->find($note['id']);
+				$note = $this->noteService->find($note['id'], $this->currentUserId);
 			}
 			$note = $note->jsonSerialize();
 			$note = $this->formatApiResponse($note);
@@ -96,7 +95,7 @@ class NoteApiController extends ApiController {
 	 * @TODO Add etag / lastmodified
 	 */
 	public function get($id) {
-		$result = $this->noteService->find($id);
+		$result = $this->noteService->find($id, $this->currentUserId);
 		if (!$result) {
 			return new NotFoundJSONResponse();
 		}
@@ -106,26 +105,26 @@ class NoteApiController extends ApiController {
 	}
 
 
-	/**
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+    /**
+     * @NoAdminRequired
+     * @NoCSRFRequired
+     * @throws \Exception
+     */
 	public function create($title, $notebook_id, $content) {
 		if ($title == "" || !$title) {
 			return new JSONResponse(['error' => 'title is missing']);
 		}
 
-		$uid = \OC::$server->getUserSession()->getUser()->getUID();
 		$note = new Note();
 		$note->setName($title);
-		$note->setUid($uid);
+		$note->setUid($this->currentUserId);
 		$note->setGuid(Utils::GUID());
 		$note->setNote($content);
 		$note->setMtime(time());
 		$note->setDeleted(0);
 
 		if(!empty($notebook_id)){
-			$notebook = $this->notebookService->find($notebook_id);
+			$notebook = $this->notebookService->find($notebook_id, $this->currentUserId);
 			if($notebook instanceof Notebook) {
 				$note->setNotebook($notebook->getId());
 			} else {
@@ -138,16 +137,17 @@ class NoteApiController extends ApiController {
 		return new JSONResponse($this->formatApiResponse($result));
 	}
 
-	/**
-	 * @NoAdminRequired
-	 * @NoCSRFRequired
-	 */
+    /**
+     * @NoAdminRequired
+     * @NoCSRFRequired
+     * @throws \Exception
+     */
 	public function update($id, $title, $content, $deleted, $notebook_id) {
 		if ($title == "" || !$title) {
 			return new JSONResponse(['error' => 'title is missing']);
 		}
 
-		$note = $this->noteService->find($id);
+		$note = $this->noteService->find($id, $this->currentUserId);
 		if (!$note) {
 			return new NotFoundJSONResponse();
 		}
@@ -158,7 +158,7 @@ class NoteApiController extends ApiController {
 
 
 		if(!empty($notebook_id)){
-			$notebook = $this->notebookService->find($notebook_id);
+			$notebook = $this->notebookService->find($notebook_id, $this->currentUserId);
 			if($notebook instanceof Notebook) {
 				$note->setNotebook($notebook->getId());
 			} else {
@@ -179,12 +179,9 @@ class NoteApiController extends ApiController {
 	 * @NoCSRFRequired
 	 */
 	public function delete($id) {
-		$entity = $this->noteService->find($id);
-		if (!$entity) {
-			return new NotFoundJSONResponse();
-		}
-
-		$this->noteService->delete($id);
+		if (!$this->noteService->delete($id, $this->currentUserId)) {
+            return new NotFoundJSONResponse();
+        }
 		$result = (object)['success' => true];
 		\OC_Hook::emit('OCA\NextNote', 'post_delete_note', ['note_id' => $id]);
 		return new JSONResponse($result);

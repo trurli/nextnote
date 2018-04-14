@@ -29,15 +29,12 @@ use OCP\IRequest;
 use OCA\NextNote\Service\SettingsService;
 
 class SettingsController extends ApiController {
-	private $userId;
 	private $settings;
 
 	public function __construct(
 		$AppName,
 		IRequest $request,
-		$userId,
-		SettingsService $settings,
-		IL10N $l) {
+		SettingsService $settings) {
 		parent::__construct(
 			$AppName,
 			$request,
@@ -45,8 +42,6 @@ class SettingsController extends ApiController {
 			'Authorization, Content-Type, Accept',
 			86400);
 		$this->settings = $settings;
-		$this->l = $l;
-		$this->userId = $userId;
 	}
 
 
